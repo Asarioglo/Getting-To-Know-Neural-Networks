@@ -174,7 +174,7 @@ var forwardNeuron = function() {
     var s = sG0.forward(axpbypc); // sig(a * x + b * y + c)
     return s;
 };
-/////
+///////
 var backwardNeuron = function(s) {
     s.gradient = 1.0;
     sG0.backward();
