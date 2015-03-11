@@ -1,0 +1,196 @@
+/**
+ * Created by asarioglo on 3/10/15.
+ */
+
+var x = -2, y = 5, z = -4;
+
+var forwardMultiplyGate = function(x, y) {
+    return x * y;
+};
+
+var forwardAddGate = function(x, y) {
+    return x + y;
+};
+
+var randomLocalSearch = function(x, y) {
+    var tweakAmount = 0.01;
+    var bestOut = -Infinity;
+    var bestX = x;
+    var bestY = y;
+
+    for (var k = 0; k < 100; k++) {
+        var xTry = x + tweakAmount * (Math.random() * 2 - 1);
+        var yTry = y + tweakAmount * (Math.random() * 2 - 1);
+        var out = forwardMultiplyGate(xTry, yTry);
+        if(out > bestOut) {
+            bestOut = out;
+            bestX = xTry;
+            bestY = yTry;
+        }
+    }
+    return bestX + '::::' + bestY + '===' + bestOut;
+};
+
+var partialDerivatives = function(x, y) {
+    var out = forwardMultiplyGate(x, y);
+    var h = 0.0001;
+
+    //  compute derivative with respect to x
+    var xph = x + h;
+    var out2 = forwardMultiplyGate(xph, y);
+    var xDerivative = (out2 - out) / h;
+
+    //  compute derivative with respect to y
+    var yph = y + h;
+    var out3 = forwardMultiplyGate(x, yph);
+    var yDerivative = (out3 - out) / h;
+
+    return {xDerivative: xDerivative, yDerivative: yDerivative};
+};
+
+var xTimesYDerivative = function(x, y) {
+    return {firstDer: y, secondDer: x};
+};
+
+var xPlusYDerivative = function(x, y) {
+    return {firstDer: 1.0, secondDer: 1.0};
+};
+
+var gradientWalk = function(x, y, step) {
+    var out = forwardMultiplyGate(x, y);
+    var derivatives = xTimesYDerivative(x, y);
+    x = x + step * derivatives.firstDer;
+    y = y + step * derivatives.secondDer;
+
+    return forwardMultiplyGate(x, y);
+};
+
+var forwardCircuit = function(x, y, z) {
+    var q = forwardAddGate(x, y);
+    var f = forwardMultiplyGate(q, z);
+    return f;
+};
+
+var twoGatesGradient = function(x, y, z) {
+    var q = forwardAddGate(x, y);
+
+    var multiplyGateDerivative = xTimesYDerivative(q, z);
+    var derivativeQ = multiplyGateDerivative.firstDer; // derivative of multiply function with respect to q
+    var derivativeZ = multiplyGateDerivative.secondDer;  // derivative of multiply function with respect to z
+
+    var addGateDerivative = xPlusYDerivative(x, y);
+    var derivativeX = addGateDerivative.firstDer;  // derivative of addition function with respect to x
+    var derivativeY = addGateDerivative.secondDer; // derivative of addition function with respect to y
+
+    // Derivative of to gates with respect to x
+    var functionDerivativeWRT_x = derivativeQ * derivativeX;
+    // Derivative of to gates with respect to y
+    var functionDerivativeWRT_y = derivativeQ * derivativeY;
+
+    return [functionDerivativeWRT_x, functionDerivativeWRT_y, derivativeZ];
+};
+
+var threeValuesGradientWalk = function(x, y, z, step) {
+    var derivatives = twoGatesGradient(x, y, z);
+    x = x + step * derivatives[0];
+    y = y + step * derivatives[1];
+    z = z + step * derivatives[2];
+
+    return forwardCircuit(x, y, z);
+};
+
+var Unit = function(value, gradient) {
+    this.value = value;
+    this.gradient = gradient;
+};
+
+var MultiplyGate = function() {};
+
+MultiplyGate.prototype = {
+    forward: function(u0, u1) {
+        this.u0 = u0;
+        this.u1 = u1;
+        this.uTop = new Unit(u0.value * u1.value, 0.0);
+        return this.uTop;
+    },
+    backward: function() {
+        this.u0.gradient += this.u1.value * this.uTop.gradient;
+        this.u1.gradient += this.u0.value * this.uTop.gradient;
+    }
+};
+
+var AddGate = function() {};
+
+AddGate.prototype = {
+    forward: function(u0, u1) {
+        this.u0 = u0;
+        this.u1 = u1;
+        this.uTop = new Unit(u0.value + u1.value, 0.0);
+        return this.uTop;
+    },
+    backward: function() {
+        this.u0.gradient += 1 * this.uTop.gradient;
+        this.u1.gradient += 1 * this.uTop.gradient;
+    }
+};
+
+var SigmoidGate = function() {
+    this.sig = function(x) { return 1 / (1 + Math.exp(-x)); }
+};
+
+SigmoidGate.prototype = {
+    forward: function(u0) {
+        this.u0 = u0;
+        this.uTop = new Unit(this.sig(this.u0.value), 0.0);
+        return this.uTop;
+    },
+    backward: function() {
+        var s = this.sig(this.u0.value);
+        this.u0.gradient += (s * (1-s)) * this.uTop.gradient;
+    }
+};
+
+// create input data
+var a = new Unit(1.0, 0.0);
+var b = new Unit(2.0, 0.0);
+var c = new Unit(-3.0, 0.0);
+var x = new Unit(-1.0, 0.0);
+var y = new Unit(3.0, 0.0);
+
+// create gates
+var mulG0 = new MultiplyGate();
+var mulG1 = new MultiplyGate();
+var addG0 = new AddGate();
+var addG1 = new AddGate();
+var sG0 = new SigmoidGate();
+
+// Forward Pass
+
+var forwardNeuron = function() {
+    var ax = mulG0.forward(a, x); // a * x
+    var by = mulG1.forward(b, y); // b * y
+    var axpby = addG0.forward(ax, by); // a * x + b * y
+    var axpbypc = addG1.forward(axpby, c); // a * x + b * y + c
+    var s = sG0.forward(axpbypc); // sig(a * x + b * y + c)
+    return s;
+};
+
+var backwardNeuron = function(s) {
+    s.gradient = 1.0;
+    sG0.backward();
+    addG1.backward();
+    addG0.backward();
+    mulG1.backward();
+    mulG0.backward();
+    var step = 0.01;
+    a.value += step * a.gradient;
+    b.value += step * b.gradient;
+    c.value += step * c.gradient;
+    x.value += step * x.gradient;
+    y.value += step * y.gradient;
+};
+
+var s = forwardNeuron();
+backwardNeuron(s);
+
+console.log('Circuit Output: ' + forwardNeuron().value);
