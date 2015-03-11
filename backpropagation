@@ -194,3 +194,4 @@ var s = forwardNeuron();
 backwardNeuron(s);
 
 console.log('Circuit Output: ' + forwardNeuron().value);
+// Test
